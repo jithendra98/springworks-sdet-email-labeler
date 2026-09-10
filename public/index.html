@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Email Labler Queue</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Email Labler Queue</h1>
+    <p class="subtitle">Employment-verification reply triage</p>
+    <div class="tool-actions"><button id="reset-data-btn" type="button" title="Testing utility — not part of the app under test">↺ Reset data</button><a id="spec-link" href="/spec" target="_blank" rel="noopener" title="Testing utility — not part of the app under test">📋 Spec</a><a id="openapi-link" href="/openapi.json" target="_blank" rel="noopener" title="Testing utility — not part of the app under test">📥 API collection</a></div>
+  </header>
+
+  <div id="app-section"><main>
+    <section class="stats" id="stats-panel">
+      <h2>Stats</h2>
+      <div class="stats-grid" id="stats-grid">Loading...</div>
+    </section>
+
+    <section class="filters">
+      <label>
+        Label
+        <select id="filter-label">
+          <option value="">All</option>
+          <option value="HR_REPLIED">HR_REPLIED</option>
+          <option value="AUTO_REPLY">AUTO_REPLY</option>
+          <option value="TICKETING_BOT">TICKETING_BOT</option>
+          <option value="NEEDS_REVIEW">NEEDS_REVIEW</option>
+        </select>
+      </label>
+      <label>
+        Assignee
+        <select id="filter-assignee">
+          <option value="">All</option>
+        </select>
+      </label>
+    </section>
+
+    <table id="inbox-table">
+      <thead>
+        <tr>
+          <th>From</th>
+          <th>Subject</th>
+          <th>Label</th>
+          <th>Asignee</th>
+        </tr>
+      </thead>
+      <tbody id="inbox-body"></tbody>
+    </table>
+  </main></div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+  <script>window.SV_APP_ID='07';window.SV_SCOREBOARD='https://sv-qa-scoreboard.onrender.com';</script>
+  <script src="report-widget.js"></script>
+</body>
+</html>
