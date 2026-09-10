@@ -17,22 +17,17 @@ async function loadStats() {
   const res = await fetch('/api/stats');
   const stats = await res.json();
   const grid = document.getElementById('stats-grid');
-  // BUG: off-by-one index shift - each label is paired with the *next*
-  // label's count instead of its own (the last label has nothing to shift
-  // into and shows 0).
-  grid.innerHTML = LABELS.map((l, i) => `<div class="stat"><span class="stat-label">${l}</span><span class="stat-count">${stats[LABELS[i + 1]] ?? 0}</span></div>`).join('');
+  // FIXED: map each label to its own count
+  grid.innerHTML = LABELS.map((l) => `<div class="stat"><span class="stat-label">${l}</span><span class="stat-count">${stats[l] ?? 0}</span></div>`).join('');
 }
 
 async function loadEmails() {
   const label = document.getElementById('filter-label').value;
   const assignee = document.getElementById('filter-assignee').value;
   const params = new URLSearchParams();
-  // BUG: query param keys are swapped - the label value is sent under the
-  // `assignee` key and vice versa, so either filter alone always matches
-  // nothing (server compares label text against agent ids and agent ids
-  // against label text).
-  if (label) params.set('assignee', label);
-  if (assignee) params.set('label', assignee);
+  // FIXED: correct query param keys
+  if (label) params.set('label', label);
+  if (assignee) params.set('assignee', assignee);
 
   const res = await fetch(`/api/emails?${params.toString()}`);
   const emails = await res.json();
@@ -40,10 +35,9 @@ async function loadEmails() {
 }
 
 function agentOptionsHtml() {
-  // BUG: this should only offer active agents, but it lists every agent
-  // regardless of the `active` flag.
+  // FIXED: filter to only include active agents
   return ['<option value="">Unassigned</option>']
-    .concat(agents.map((a) => `<option value="${a.id}">${a.name}</option>`))
+    .concat(agents.filter((a) => a.active).map((a) => `<option value="${a.id}">${a.name}</option>`))
     .join('');
 }
 
@@ -66,21 +60,19 @@ function renderTable(emails) {
     </tr>
   `).join('');
 
-  // BUG: the label <select> is never given a `.value` reflecting the
-  // email's current label, so it always shows the first option
-  // (HR_REPLIED) regardless of the actual label.
+  // FIXED: bind current label value to select dropdown
+  body.querySelectorAll('.label-select').forEach((sel) => {
+    const id = Number(sel.dataset.id);
+    const email = emails.find((e) => e.id === id);
+    if (email) sel.value = email.label;
+    sel.addEventListener('change', () => onLabelChange(sel));
+  });
 
-  // Wire up the assign dropdown to reflect the current assignee at least.
+  // Wire up the assign dropdown to reflect the current assignee
   body.querySelectorAll('.assign-select').forEach((sel) => {
     const id = Number(sel.dataset.id);
     const email = emails.find((e) => e.id === id);
     if (email) sel.value = email.assignee || '';
-  });
-
-  body.querySelectorAll('.label-select').forEach((sel) => {
-    sel.addEventListener('change', () => onLabelChange(sel));
-  });
-  body.querySelectorAll('.assign-select').forEach((sel) => {
     sel.addEventListener('change', () => onAssignChange(sel));
   });
 }
@@ -99,27 +91,30 @@ async function onLabelChange(sel) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ label: sel.value })
   });
-  // BUG: toast fires unconditionally - even a non-2xx response still
-  // shows "Label updated" instead of surfacing the error.
-  showToast('Label updated');
-  await loadEmails();
-  // BUG: stats panel is never refreshed after a label change, so it goes
-  // stale until the page is manually reloaded.
+  // FIXED: check response status and refresh stats panel
+  if (res.ok) {
+    showToast('Label updated');
+    await loadEmails();
+    await loadStats();
+  } else {
+    showToast('Failed to update label');
+  }
 }
 
 async function onAssignChange(sel) {
   const id = sel.dataset.id;
-  // BUG: request body key is `assignee`, but the API expects `assigneeId`
-  // (that's the name of the field on the *response* email object - easy to
-  // confuse). The server destructures `assigneeId` from the body, gets
-  // `undefined`, and the assign silently no-ops.
+  // FIXED: send assigneeId instead of assignee
   const res = await fetch(`/api/emails/${id}/assign`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ assignee: sel.value || null })
+    body: JSON.stringify({ assigneeId: sel.value || null })
   });
-  showToast('Assignee updated');
-  await loadEmails();
+  if (res.ok) {
+    showToast('Assignee updated');
+    await loadEmails();
+  } else {
+    showToast('Failed to update assignee');
+  }
 }
 
 document.getElementById('filter-label').addEventListener('change', loadEmails);

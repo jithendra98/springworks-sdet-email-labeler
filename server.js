@@ -54,33 +54,49 @@ async function fixTrackOpen() {
 }
 
 
+// Helper to ensure public contract without leaking internal fields
+function sanitizeEmail(e) {
+  if (!e) return null;
+  return {
+    id: e.id,
+    from: e.from,
+    subject: e.subject,
+    label: e.label,
+    assignee: e.assignee
+  };
+}
+
 // GET /api/emails?label=&assignee=
 app.get('/api/emails', (req, res) => {
   const { label, assignee } = req.query;
+  const labelStr = Array.isArray(label) ? label[0] : label;
+  const assigneeStr = Array.isArray(assignee) ? assignee[0] : assignee;
   let result = req.store.emails;
 
-  if (label || assignee) {
+  if (labelStr || assigneeStr) {
     result = req.store.emails.filter((e) => {
-      const labelMatch = label
-        ? e.label.toUpperCase().includes(label.toUpperCase())
-        : false;
-      const assigneeMatch = assignee ? e.assignee === assignee : false;
-      // BUG: when both filters are supplied they should combine with AND
-      // (narrow the result set). Using OR here means supplying assignee
-      // pulls in emails with a completely different label.
-      if (label && assignee) return labelMatch || assigneeMatch;
-      if (label) return labelMatch;
+      let labelMatch = false;
+      if (labelStr) {
+        const validLabel = LABELS.find((l) => l.toUpperCase() === labelStr.trim().toUpperCase());
+        labelMatch = validLabel ? e.label.toUpperCase() === validLabel.toUpperCase() : false;
+      }
+      const assigneeMatch = assigneeStr ? e.assignee === assigneeStr : false;
+
+      // FIXED: Combined filters require AND logic
+      if (labelStr && assigneeStr) return labelMatch && assigneeMatch;
+      if (labelStr) return labelMatch;
       return assigneeMatch;
     });
   }
 
-  res.json(result);
+  // FIXED: sanitize to avoid leaking internal fields
+  res.json(result.map(sanitizeEmail));
 });
 
 app.get('/api/emails/:id', (req, res) => {
   const email = req.store.emails.find((e) => e.id === Number(req.params.id));
   if (!email) return res.status(404).json({ error: 'Email not found' });
-  res.json(email);
+  res.json(sanitizeEmail(email));
 });
 
 app.get('/api/agents', (req, res) => {
@@ -91,9 +107,8 @@ app.get('/api/agents', (req, res) => {
 app.get('/api/stats', (req, res) => {
   const stats = {};
   LABELS.forEach((l) => { stats[l] = 0; });
-  // BUG: off-by-one - loop skips the very last email in the array,
-  // so the total across buckets is always one less than emails.length.
-  for (let i = 0; i < req.store.emails.length - 1; i++) {
+  // FIXED: loop through all emails up to length (not length - 1)
+  for (let i = 0; i < req.store.emails.length; i++) {
     stats[req.store.emails[i].label] += 1;
   }
   res.json(stats);
@@ -104,33 +119,40 @@ app.patch('/api/emails/:id/label', (req, res) => {
   if (!email) return res.status(404).json({ error: 'Email not found' });
 
   const { label } = req.body;
-  // BUG: no trim applied before validating/storing - a label with
-  // leading/trailing whitespace either fails validation or gets stored
-  // padded, breaking later exact-match filtering.
-  // BUG: missing enum validation - any string is accepted as a label,
-  // it should be rejected with 400 unless it is one of LABELS.
-  email.label = label.toUpperCase();
-  // BUG: changing the label silently clears the assignee - only the label
-  // should change here. Only observable via a sequence: assign -> relabel
-  // -> GET (assignee has reverted to null even though only label changed).
-  email.assignee = null;
-  res.json(email);
+  // FIXED: Validate missing label
+  if (!label || typeof label !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid label' });
+  }
+
+  // FIXED: Trim whitespace and validate enum
+  const trimmed = label.trim().toUpperCase();
+  if (!LABELS.includes(trimmed)) {
+    return res.status(400).json({ error: 'Invalid label' });
+  }
+
+  email.label = trimmed;
+  // FIXED: Persist update in store and do not clear assignee
+  const idx = req.store.emails.findIndex((e) => e.id === email.id);
+  req.store.emails[idx] = { ...email };
+
+  res.json(sanitizeEmail(req.store.emails[idx]));
 });
 
 app.patch('/api/emails/:id/assign', (req, res) => {
   const idx = req.store.emails.findIndex((e) => e.id === Number(req.params.id));
-  // BUG: wrong HTTP status - unlike the label route above, an unknown id
-  // here falls through and returns 200 with an empty body instead of 404.
-  if (idx === -1) return res.json({});
+  // FIXED: Return 404 for unknown email id
+  if (idx === -1) return res.status(404).json({ error: 'Email not found' });
 
   const { assigneeId } = req.body;
-  // BUG: missing business rule - agent existence is not even checked,
-  // and an inactive agent (active: false) is accepted without complaint.
-  // BUG: state does not persist - the update is applied to a shallow
-  // copy that is returned to the caller but never written back into the
-  // `emails` array, so a follow-up GET still shows the old assignee.
-  const updated = { ...req.store.emails[idx], assignee: assigneeId };
-  res.json(updated);
+  // FIXED: Check agent existence and active status
+  const agent = req.store.agents.find((a) => a.id === assigneeId);
+  if (!agent || !agent.active) {
+    return res.status(400).json({ error: 'Unknown or inactive agent' });
+  }
+
+  // FIXED: Persist changes back into store
+  req.store.emails[idx].assignee = assigneeId;
+  res.json(sanitizeEmail(req.store.emails[idx]));
 });
 
 // --- Test-harness endpoints (tooling for the hiring exercise, not part of
