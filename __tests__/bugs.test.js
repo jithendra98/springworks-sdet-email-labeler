@@ -32,24 +32,26 @@ describe('Phase 2 — Bug Regression Test Suite', () => {
 
     // 3. BUG-07-16: PATCH /api/emails/:id/label — state-not-persisted
     test('BUG-07-16: PATCH /api/emails/:id/label updates should persist on subsequent GET requests', async () => {
-      const patchRes = await request(app)
+      const session = request.agent(app);
+      const patchRes = await session
         .patch('/api/emails/1/label')
         .send({ label: 'AUTO_REPLY' });
       expect(patchRes.status).toBe(200);
 
-      const getRes = await request(app).get('/api/emails/1');
+      const getRes = await session.get('/api/emails/1');
       expect(getRes.status).toBe(200);
       expect(getRes.body.label).toBe('AUTO_REPLY');
     });
 
     // 4. BUG-07-15: PATCH /api/emails/:id/assign — state-not-persisted
     test('BUG-07-15: PATCH /api/emails/:id/assign updates should persist on subsequent GET requests', async () => {
-      const patchRes = await request(app)
+      const session = request.agent(app);
+      const patchRes = await session
         .patch('/api/emails/1/assign')
         .send({ assigneeId: 'a2' });
       expect(patchRes.status).toBe(200);
 
-      const getRes = await request(app).get('/api/emails/1');
+      const getRes = await session.get('/api/emails/1');
       expect(getRes.status).toBe(200);
       expect(getRes.body.assignee).toBe('a2');
     });
